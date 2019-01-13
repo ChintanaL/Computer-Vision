@@ -1,0 +1,244 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Oct 13 19:56:03 2018
+
+@author: chintana
+"""
+
+
+
+import numpy as np;
+import sys;
+import os;
+import cv2 as cv2;
+
+
+
+def HarrisCornerOwn(img,sigma,window_size,k,threshold):
+    
+    img1= img.copy()
+    img_bw=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    
+    #window_size=3
+    height=img_bw.shape[0]
+    width=img_bw.shape[1]
+    cornerList = []
+    #ksize=3
+    #sigma=2
+    dx = cv2.Sobel(img_bw,cv2.CV_64F,1,0,ksize=5)
+    dy = cv2.Sobel(img_bw,cv2.CV_64F,0,1,ksize=5)
+    
+    
+    #Ixx = dx**2
+    #Ixy = dy*dx
+    #Iyy = dy**2
+     
+    Ixx = cv2.GaussianBlur(dx*dx,(5,5),sigma)
+    Ixy = cv2.GaussianBlur(dx*dy,(5,5),sigma)
+    Iyy = cv2.GaussianBlur(dy*dy,(5,5),sigma)
+   
+    dst = np.zeros((height,width), dtype = np.float32)
+    
+    for y in range(0, height-window_size+1):
+          for x in range(0, width-window_size+1):
+               Ixx_win=Ixx[y:y+window_size-1,x:x+window_size-1]
+               Ixy_win=Ixy[y:y+window_size-1,x:x+window_size-1]
+               Iyy_win=Iyy[y:y+window_size-1,x:x+window_size-1]
+               
+               Sum_Ixx=Ixx_win.sum()
+               Sum_Ixy=Ixy_win.sum()
+               Sum_Iyy=Iyy_win.sum()
+               
+               #Calculate R
+               #Calculating Determinant
+               det = (Sum_Ixx * Sum_Iyy) - (Sum_Ixy**2)
+               trace = Sum_Ixx + Sum_Iyy
+               #r= det - 0.04*(trace**2)
+               r= det - k*(trace**2)
+               dst[y,x]=r
+              
+    
+    print("r shape",dst.shape)
+    print("threshold  max",dst.max())
+    
+    #result is dilated for marking the corners
+    dst = cv2.dilate(dst,None)
+   
+    #newImage
+    
+    img1[dst>0.01*dst.max()]=[0,0,255]
+    cv2.imshow('from own implementation of Harris corner detection',img1)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+    ret, dst = cv2.threshold(dst,0.01*dst.max(),255,0)
+    dst = np.uint8(dst)
+    
+    # find centroids
+    ret, labels, stats, centroids = cv2.connectedComponentsWithStats(dst)
+    
+    # define the criteria to stop and refine the corners
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.001)
+    corners = cv2.cornerSubPix(img_bw,np.float32(centroids),(5,5),(-1,-1),criteria)
+    #print(corners)
+    return(corners)
+
+
+## Convert obtained corners to keypoints and get feature vectors
+def convertCornerstoKeypoints(corners):
+        keypointlist=[]
+        i = 0
+        while i < len(corners):           
+            x_cord=corners[i].flat[0]
+            y_cord=corners[i].flat[1] 
+            
+            #Convert corner to keypoint using keypint() function
+            keypoint = cv2.KeyPoint(x_cord, y_cord, 5)
+            keypointlist.append(keypoint)
+            i += 1
+            
+        return(keypointlist)
+
+
+def donothing(x):
+    pass
+"""
+# Harris corner
+dst_alg = cv2.cornerHarris(img_bw,3, 3 ,0.04)
+print('dst.max', dst.max())
+
+
+print('dst_alg.max', dst_alg.max())
+img2[dst_alg>0.01*dst_alg.max()]=[0,0,255]
+cv2.imshow('CV alg',img2)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+"""
+
+def main():
+    
+  #Read image
+  img1 = cv2.imread("Leaf.jpg")
+  
+  img2 = cv2.imread("Leaf.jpg")
+  
+  ## GEt all values required for harris corner algorithm from trackbar
+  winName='Getvalues'
+  
+  
+  cv2.imshow(winName,img1)
+  
+  cv2.createTrackbar('Variance',winName,2,5,donothing)
+  cv2.createTrackbar('Neighborhood',winName,3,3,donothing)
+  cv2.createTrackbar('WeightTrace',winName,4,6,donothing)
+  cv2.createTrackbar('Threshold',winName,10,100,donothing)
+  cv2.waitKey(0)
+  #cv2.destroyAllWindows()
+  
+  #Get corners and localised corner locations
+  img1copy=img1.copy()
+  img2copy=img2.copy()
+  
+  
+  sigma = cv2.getTrackbarPos('Variance',winName)
+  #sigma=sigma/100
+  print(sigma)
+  block_size = cv2.getTrackbarPos('Neighborhood',winName)
+  print(block_size)
+  k = cv2.getTrackbarPos('WeightTrace',winName)
+  k=k/100
+  print(k)
+  threshold = cv2.getTrackbarPos('Threshold',winName)
+  print(threshold)
+  
+  
+  corners=HarrisCornerOwn(img1,sigma,block_size,k,threshold)
+  corners2=HarrisCornerOwn(img2,sigma,block_size,k,threshold)
+  
+  #convert corner to keypoints and use those keypoints to compute features
+  
+  keypointlist=convertCornerstoKeypoints(corners)
+  orb = cv2.ORB_create()   
+  kp, des = orb.compute(img1, keypointlist)  
+  
+    
+  keypointlist2=convertCornerstoKeypoints(corners2)
+  kp2, des2 = orb.compute(img2, keypointlist2)  
+  
+  
+  
+  # draw an empty rectangle around the corner
+  
+  for i in range(0,corners.shape[0]) :
+      cv2.rectangle(img1, (int(corners[i,0]) - 18, int(corners[i,1])-18), (int(corners[i,0])+18, int(corners[i,1])+18), [0,0,0])
+  for j in range(0,corners2.shape[0]) :
+      cv2.rectangle(img2, (int(corners2[j,0]) - 18, int(corners2[j,1])-18), (int(corners2[j,0])+18, int(corners2[j,1])+18), [0,0,0])
+  
+  cv2.imshow('corners drawn on image 1',img1)
+  cv2.imshow('corners drawn on  image 2',img2)
+  cv2.waitKey(0)
+  cv2.destroyAllWindows()
+  # create BFMatcher object
+  bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    
+  # Match descriptors.
+  matches = bf.match(des,des2)
+    
+  # Sort them in the order of their distance.
+  matches = sorted(matches, key = lambda x:x.distance)
+  
+  # Draw first 20 matches.
+  
+  img3 = cv2.drawMatches(img1copy,kp,img2copy,kp2,matches[:5],None,flags=2)
+    
+  cv2.imshow('Matched images',img3)
+  cv2.waitKey(0)
+  cv2.destroyAllWindows()
+  
+  list_kp1 = []
+  list_kp2 = []
+  font = cv2.FONT_HERSHEY_SIMPLEX
+  
+  # For each match...number the matches across two images
+  count=0
+  for mat in matches[:20]:
+    
+        # Get the matching keypoints for each of the images
+        img1_idx = mat.queryIdx
+        img2_idx = mat.trainIdx
+    
+        #Using indexes
+        
+        (x1,y1) = corners[img1_idx]
+        (x2,y2) = corners2[img2_idx]
+    
+        # Append to each list
+        list_kp1.append((x1, y1))
+        list_kp2.append((x2, y2))
+        
+        cv2.putText(img1copy,str(count+1), list_kp1[count], font, 1, (0, 255, 0), 2)
+        cv2.putText(img2copy,str(count+1), list_kp2[count], font, 1, (0, 255, 0), 2)
+        count+=1
+  
+  print(list_kp1)
+  print(list_kp2)
+  
+  #both = np.concatenate((img1,img2), axis=1) 
+  cv2.imshow('Matched image 1',img1copy)
+  cv2.imshow('Matched image 2',img2copy)
+  cv2.waitKey(0)
+  cv2.destroyAllWindows()
+  #break
+  
+ 
+        
+if __name__=="__main__":
+     main()
+
+    
+
+
+
+
+
+
